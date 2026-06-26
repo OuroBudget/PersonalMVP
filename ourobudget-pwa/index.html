@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>OuroBudget — Manual Budget</title>
+
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png" />
+  <meta name="theme-color" content="#5A9B0A" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="OuroBudget" />
+  <meta name="description" content="Simple, private bi-weekly budgeting. Your data stays on your device." />
+
+  <!-- Brand theme tokens (from OuroBudget Brand Foundation) -->
+  <style>
+    :root {
+      --bg:#EDECE9; --surface:#F7F7F5; --accent:#5A9B0A; --accent-d:#3D6B07;
+      --accent-l:#EAF3D8; --accent-m:#A8C870; --border:#DCE5CB;
+      --text:#262525; --text2:#6E6B6B; --muted:#848282;
+    }
+    .dark {
+      --bg:#1E1E1E; --surface:#262525; --accent:#6FDC30; --accent-d:#2ABF33;
+      --accent-l:rgba(90,155,10,0.12); --accent-m:rgba(90,155,10,0.30); --border:#343d2a;
+      --text:#EDECE9; --text2:#848282; --muted:#6E6B6B;
+    }
+    html, body { background:var(--bg); }
+    body {
+      font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      -webkit-font-smoothing:antialiased; margin:0;
+    }
+    .eyebrow { font-size:11px; letter-spacing:0.16em; text-transform:uppercase; }
+    input::-webkit-outer-spin-button, input::-webkit-inner-spin-button { -webkit-appearance:none; margin:0; }
+    input[type=number] { -moz-appearance:textfield; }
+  </style>
+
+  <!-- Vendored locally for full offline use (no CDN at runtime, no external calls) -->
+  <script src="assets/vendor/tailwind.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: {
+        colors: { brand: {
+          bg:'var(--bg)', surface:'var(--surface)', accent:'var(--accent)',
+          accentd:'var(--accent-d)', accentl:'var(--accent-l)', accentm:'var(--accent-m)',
+          border:'var(--border)', text:'var(--text)', text2:'var(--text2)', muted:'var(--muted)'
+        } },
+        fontFamily: { sans:['-apple-system','BlinkMacSystemFont','Segoe UI','system-ui','sans-serif'] }
+      } }
+    };
+  </script>
+  <script src="assets/vendor/react.production.min.js"></script>
+  <script src="assets/vendor/react-dom.production.min.js"></script>
+  <script src="assets/vendor/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <noscript>OuroBudget needs JavaScript enabled.</noscript>
+
+  <script type="text/babel" data-presets="react" src="app.jsx"></script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (e) {
+          console.warn('SW registration failed:', e);
+        });
+      });
+    }
+  </script>
+</body>
+</html>
