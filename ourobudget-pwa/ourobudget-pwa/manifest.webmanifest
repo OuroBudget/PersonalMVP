@@ -1,0 +1,15 @@
+{
+  "name": "OuroBudget — Manual Budget",
+  "short_name": "OuroBudget",
+  "description": "Simple, private bi-weekly budgeting. Your data stays on your device. Loop In. Level Up.",
+  "start_url": ".",
+  "scope": ".",
+  "display": "standalone",
+  "background_color": "#EDECE9",
+  "theme_color": "#5A9B0A",
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" },
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}
