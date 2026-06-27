@@ -31,14 +31,11 @@ const FIXED_CATEGORIES = [
   { id: "cat_gas", name: "Gas" },
   { id: "cat_ccpay", name: "Credit Card Payment" },
   { id: "cat_food", name: "Food" },
-  { id: "cat_biz", name: "Business Expenses" },
-  { id: "cat_chasefee", name: "Chase Card Fees" },
 ];
 const DEFAULT_ACCOUNTS = [
-  { id: "acc_capone", name: "Capital One" },
-  { id: "acc_chase", name: "Chase" },
-  { id: "acc_chartway", name: "Chartway" },
-  { id: "acc_wallet", name: "Wallet" },
+  { id: "acc_bank1", name: "Bank 1" },
+  { id: "acc_bank2", name: "Bank 2" },
+  { id: "acc_cash", name: "Cash" },
 ];
 
 function buildSeed() {
