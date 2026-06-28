@@ -47,8 +47,11 @@ Because all paths are **relative**, it works at a domain root or a sub-path.
 
 ## How friends install it
 
-- **Android / desktop Chrome/Edge:** open the link → tap **Install** in the header (or the
-  browser's install icon in the address bar).
+- **Android / desktop Chrome/Edge (Google):** open the link → tap **Install** in the header
+  (or the browser's install icon in the address bar). If no prompt appears, tap **Install**
+  for a step-by-step guide (⋮ menu → **Add to Home screen**).
+- **Samsung Internet:** open the link → tap **Install** → follow the steps (≡ menu →
+  **Add page to** → **Home screen**).
 - **iPhone (Safari):** open the link → tap **Install** → follow the on-screen steps
   (Share → **Add to Home Screen**). iOS doesn't allow one-tap install, so this guide is the
   expected flow.

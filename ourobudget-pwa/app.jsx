@@ -390,21 +390,64 @@ function AccountsSection({ doc, actions }) {
 }
 
 /* =========================================================================
-   Install button (native prompt on Android/desktop; guide on iOS)
+   Install button (native prompt where available; per-platform guide otherwise:
+   iOS / Android-Chrome / Samsung Internet / generic)
    ========================================================================= */
 function isIOS() {
   const ua = window.navigator.userAgent;
   return (/iphone|ipad|ipod/i.test(ua) ||
     (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)) && !window.MSStream;
 }
+function isSamsung() {
+  return /SamsungBrowser/i.test(window.navigator.userAgent);
+}
+function isAndroid() {
+  return /android/i.test(window.navigator.userAgent);
+}
 function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
 }
 
+const b = (t) => <span className="font-medium text-brand-text">{t}</span>;
+const INSTALL_GUIDES = {
+  ios: {
+    title: "Add to Home Screen (iPhone / iPad)",
+    steps: [
+      <>Tap the {b("Share")} button <span className="inline-block mx-1 align-middle">⬆️</span> at the bottom of Safari.</>,
+      <>Scroll down and tap {b("“Add to Home Screen.”")}</>,
+      <>Tap {b("Add")} — the OuroBudget icon appears on your home screen.</>,
+    ],
+  },
+  android: {
+    title: "Install on Android (Chrome)",
+    steps: [
+      <>Tap the {b("⋮")} menu (three dots) at the top-right of Chrome.</>,
+      <>Tap {b("“Install app”")} or {b("“Add to Home screen.”")}</>,
+      <>Tap {b("Install")} (or {b("Add")}) to confirm — OuroBudget appears with your apps.</>,
+    ],
+  },
+  samsung: {
+    title: "Install on Samsung Internet",
+    steps: [
+      <>Tap the {b("≡")} menu (three lines) at the bottom-right.</>,
+      <>Tap {b("“Add page to.”")}</>,
+      <>Choose {b("“Home screen,”")} then tap {b("Add")} to confirm.</>,
+    ],
+  },
+  generic: {
+    title: "Add to Home Screen",
+    steps: [
+      <>Open your browser’s menu (usually {b("⋮")} or {b("≡")}).</>,
+      <>Choose {b("“Install app”")} or {b("“Add to Home screen.”")}</>,
+      <>Confirm — OuroBudget opens like a normal app and works offline.</>,
+    ],
+  },
+};
+
 function InstallButton() {
   const [deferred, setDeferred] = useState(null);
   const [installed, setInstalled] = useState(isStandalone());
-  const [help, setHelp] = useState(null); // 'ios' | 'generic' | null
+  const [help, setHelp] = useState(null); // 'ios' | 'android' | 'samsung' | 'generic' | null
 
   useEffect(() => {
     const onPrompt = (e) => { e.preventDefault(); setDeferred(e); };
@@ -426,6 +469,10 @@ function InstallButton() {
       setDeferred(null);
     } else if (isIOS()) {
       setHelp("ios");
+    } else if (isSamsung()) {
+      setHelp("samsung");
+    } else if (isAndroid()) {
+      setHelp("android");
     } else {
       setHelp("generic");
     }
@@ -443,22 +490,12 @@ function InstallButton() {
           <div className="bg-brand-surface border border-brand-border rounded-2xl max-w-sm w-full p-5"
             onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-2">
-              <h3 className="text-base font-medium">Add to Home Screen</h3>
+              <h3 className="text-base font-medium">{INSTALL_GUIDES[help].title}</h3>
               <button onClick={() => setHelp(null)} className="text-brand-muted text-xl leading-none">×</button>
             </div>
-            {help === "ios" ? (
-              <ol className="text-sm text-brand-text2 space-y-2 list-decimal pl-5">
-                <li>Tap the <span className="font-medium text-brand-text">Share</span> button
-                  <span className="inline-block mx-1 align-middle">⬆️</span> at the bottom of Safari.</li>
-                <li>Scroll down and tap <span className="font-medium text-brand-text">“Add to Home Screen.”</span></li>
-                <li>Tap <span className="font-medium text-brand-text">Add</span> — the OuroBudget icon appears on your home screen.</li>
-              </ol>
-            ) : (
-              <p className="text-sm text-brand-text2">
-                Open your browser’s menu and choose <span className="font-medium text-brand-text">“Install app”</span> or
-                <span className="font-medium text-brand-text"> “Add to Home Screen.”</span>
-              </p>
-            )}
+            <ol className="text-sm text-brand-text2 space-y-2 list-decimal pl-5">
+              {INSTALL_GUIDES[help].steps.map((step, i) => <li key={i}>{step}</li>)}
+            </ol>
             <p className="text-xs text-brand-muted mt-3">Once added, it opens like a normal app and works offline.</p>
           </div>
         </div>
