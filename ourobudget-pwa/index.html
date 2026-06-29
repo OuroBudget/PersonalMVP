@@ -60,12 +60,38 @@
   <div id="root"></div>
   <noscript>OuroBudget needs JavaScript enabled.</noscript>
 
+  <script src="lib.js"></script>
   <script type="text/babel" data-presets="react" src="app.jsx"></script>
 
   <script>
     if ('serviceWorker' in navigator) {
+      // When the new worker takes control, reload exactly once to load fresh assets.
+      var ouroReloaded = false;
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (ouroReloaded) return;
+        ouroReloaded = true;
+        window.location.reload();
+      });
+
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js').catch(function (e) {
+        navigator.serviceWorker.register('sw.js').then(function (reg) {
+          function flagReady() {
+            window.__ouroSWReg = reg;
+            window.__ouroUpdateReady = true;
+            window.dispatchEvent(new CustomEvent('ouro-update-ready'));
+          }
+          // An update was already downloaded and is waiting.
+          if (reg.waiting && navigator.serviceWorker.controller) flagReady();
+          // An update is downloading now.
+          reg.addEventListener('updatefound', function () {
+            var nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener('statechange', function () {
+              // "installed" + an existing controller == update (not first install).
+              if (nw.state === 'installed' && navigator.serviceWorker.controller) flagReady();
+            });
+          });
+        }).catch(function (e) {
           console.warn('SW registration failed:', e);
         });
       });

@@ -12,7 +12,6 @@ const uid = (p) => `${p}_${Date.now().toString(36)}${Math.random().toString(36).
 
 const usd = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
 const money = (n) => usd.format(Number.isFinite(n) ? n : 0);
-const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
 
 const BIWEEKLY_DAYS = 14;
 const addDays = (iso, days) => {
@@ -43,7 +42,8 @@ function buildSeed() {
   const start = new Date().toISOString().slice(0, 10);
   const alloc = () => Object.fromEntries(FIXED_CATEGORIES.map((c) => [c.id, 0]));
   return {
-    version: 1,
+    version: DOC_VERSION,
+    budgetTitle: "",
     categories: { updatedAt: ts, items: FIXED_CATEGORIES.map((c) => ({ ...c })) },
     accounts: DEFAULT_ACCOUNTS.map((a) => ({ ...a, balance: 0, updatedAt: ts, deleted: false })),
     checks: [0, 1, 2, 3].map((i) => ({
@@ -53,6 +53,7 @@ function buildSeed() {
       income: 0,
       allocations: alloc(),
       customCategories: [],
+      repeat: false,
       updatedAt: ts,
       deleted: false,
     })),
@@ -173,40 +174,50 @@ function StatCard({ label, value, sub, tone }) {
 }
 
 function BreakdownBar({ doc, check }) {
-  const segments = [];
-  (doc.categories.items || []).forEach((c) => {
-    const amt = num((check.allocations || {})[c.id]);
-    if (amt > 0) segments.push({ name: c.name, amt });
-  });
-  (check.customCategories || []).forEach((c) => {
-    const amt = num(c.amount);
-    if (amt > 0) segments.push({ name: c.name || "Other", amt });
-  });
-  const total = segments.reduce((s, x) => s + x.amt, 0);
+  const b = computeBreakdown(check, doc.categories.items);
   return (
     <Card className="p-4">
-      <Eyebrow>This Check — Where it goes</Eyebrow>
-      {total <= 0 ? (
+      <Eyebrow>Where your money is going:</Eyebrow>
+      {b.empty ? (
         <div className="text-sm text-brand-muted py-3">
           Add some planned amounts below and your breakdown shows up here.
         </div>
       ) : (
         <>
           <div className="flex w-full h-3 rounded-full overflow-hidden my-3 bg-brand-bg">
-            {segments.map((s, i) => (
+            {b.segments.map((s, i) => (
               <div key={i} title={`${s.name}: ${money(s.amt)}`}
-                style={{ width: `${(s.amt / total) * 100}%`, background: SEG_COLORS[i % SEG_COLORS.length] }} />
+                style={{ width: `${s.width}%`, background: SEG_COLORS[i % SEG_COLORS.length] }} />
             ))}
+            {b.unallocated && (
+              <div title={`Unallocated: ${money(b.unallocated.amt)}`}
+                style={{ width: `${b.unallocated.width}%`, background: "var(--border)" }} />
+            )}
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-2">
-            {segments.map((s, i) => (
+            {b.segments.map((s, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
                 <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: SEG_COLORS[i % SEG_COLORS.length] }} />
                 <span className="text-brand-text2 truncate">{s.name}</span>
-                <span className="ml-auto tabular-nums text-brand-muted">{Math.round((s.amt / total) * 100)}%</span>
+                <span className="ml-auto tabular-nums text-brand-muted">{s.pct}%</span>
               </div>
             ))}
+            {b.unallocated && (
+              <div className="flex items-center gap-2 text-xs">
+                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: "var(--border)" }} />
+                <span className="text-brand-text2 truncate">Unallocated</span>
+                <span className="ml-auto tabular-nums text-brand-muted">{b.unallocated.pct}%</span>
+              </div>
+            )}
           </div>
+          {b.over > 0 && (
+            <div className="text-xs text-brand-text2 mt-2">Over income by {money(b.over)}</div>
+          )}
+          {b.incomeZeroFallback && (
+            <div className="text-xs text-brand-muted mt-2">
+              Set this check's income to see each category as a share of income.
+            </div>
+          )}
         </>
       )}
     </Card>
@@ -279,7 +290,9 @@ function BudgetSection({ doc, check, selectedId, setSelectedId, actions }) {
   return (
     <Card className="p-4 sm:p-5">
       <div className="flex items-center justify-between mb-3">
-        <h2 className="text-lg font-medium tracking-tight">Bi-Weekly Budget</h2>
+        <TextInput value={doc.budgetTitle || ""} onChange={actions.setBudgetTitle}
+          placeholder="Budget"
+          className="text-lg font-medium tracking-tight text-brand-text min-w-0 flex-1" />
         <span className="eyebrow text-brand-muted">{checks.length} check{checks.length === 1 ? "" : "s"}</span>
       </div>
 
@@ -319,12 +332,20 @@ function BudgetSection({ doc, check, selectedId, setSelectedId, actions }) {
         </label>
       </div>
 
+      <label className="flex items-center gap-2 mt-2 text-sm text-brand-text2 select-none">
+        <input type="checkbox" checked={check.repeat === true}
+          onChange={(e) => actions.updateCheck(check.id, { repeat: e.target.checked })}
+          className="accent-brand-accent" />
+        Repeat this amount for new checks
+      </label>
+
       <div className="mt-3">
         {doc.categories.items.map((c) => (
           <BudgetRow key={c.id} label={c.name} renamable
             onRename={(name) => actions.renameCategory(c.id, name)}
             amount={(check.allocations || {})[c.id]}
-            onAmount={(v) => actions.setAllocation(check.id, c.id, v)} />
+            onAmount={(v) => actions.setAllocation(check.id, c.id, v)}
+            onRemove={() => actions.removeCategory(c.id)} />
         ))}
         {(check.customCategories || []).map((c) => (
           <BudgetRow key={c.id} label={c.name} renamable
@@ -505,6 +526,42 @@ function InstallButton() {
 }
 
 /* =========================================================================
+   Update banner — surfaces a waiting service-worker update
+   ========================================================================= */
+function UpdateBanner() {
+  const [ready, setReady] = useState(typeof window !== "undefined" && window.__ouroUpdateReady === true);
+  const [dismissed, setDismissed] = useState(false);
+
+  useEffect(() => {
+    const on = () => setReady(true);
+    window.addEventListener("ouro-update-ready", on);
+    return () => window.removeEventListener("ouro-update-ready", on);
+  }, []);
+
+  if (!ready || dismissed) return null;
+
+  const refresh = () => {
+    const reg = window.__ouroSWReg;
+    if (reg && reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+    else window.location.reload();
+  };
+
+  return (
+    <div className="fixed inset-x-0 bottom-0 z-50 p-3 flex justify-center">
+      <div className="flex items-center gap-3 bg-brand-surface border border-brand-border rounded-2xl px-4 py-2.5 shadow-lg max-w-sm w-full">
+        <span className="text-sm text-brand-text flex-1">A new version is available.</span>
+        <button onClick={refresh}
+          className="rounded-full px-3 py-1.5 text-xs font-medium bg-brand-accent text-white dark:text-[#15240a] hover:bg-brand-accentd transition-colors">
+          Refresh
+        </button>
+        <button onClick={() => setDismissed(true)}
+          className="text-brand-muted text-xl leading-none px-1" title="Dismiss">×</button>
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
    Header
    ========================================================================= */
 function Header({ dark, setDark, saving }) {
@@ -555,9 +612,16 @@ function App() {
   useEffect(() => {
     (async () => {
       const local = await idbGet();
-      const initial = validDoc(local) ? local : buildSeed();
+      let initial;
+      if (validDoc(local)) {
+        const { doc: migrated, changed } = migrateDoc(local);
+        initial = migrated;
+        if (changed) idbSet(initial).catch(() => {});
+      } else {
+        initial = buildSeed();
+        idbSet(initial).catch(() => {});
+      }
       setDoc(initial);
-      if (!validDoc(local)) idbSet(initial).catch(() => {});
       const first = sortedChecks(initial)[0];
       setSelectedId(first ? first.id : null);
     })();
@@ -574,9 +638,10 @@ function App() {
   }, []);
 
   const replaceAll = useCallback((nextDoc) => {
-    setDoc(nextDoc);
-    idbSet(nextDoc).catch(() => {});
-    const first = sortedChecks(nextDoc)[0];
+    const { doc: migrated } = migrateDoc(nextDoc);
+    setDoc(migrated);
+    idbSet(migrated).catch(() => {});
+    const first = sortedChecks(migrated)[0];
     setSelectedId(first ? first.id : null);
   }, []);
 
@@ -600,17 +665,36 @@ function App() {
   };
 
   const actions = {
+    setBudgetTitle: (name) => mutate((d) => { d.budgetTitle = name; return d; }),
     updateAccount: (id, patch) => mutate((d) => { d.accounts = d.accounts.map((a) => a.id === id ? { ...a, ...patch, updatedAt: nowIso() } : a); return d; }),
     addAccount: () => mutate((d) => { d.accounts.push({ id: uid("acc"), name: "New Account", balance: 0, updatedAt: nowIso(), deleted: false }); return d; }),
     removeAccount: (id) => mutate((d) => { d.accounts = d.accounts.map((a) => a.id === id ? { ...a, deleted: true, updatedAt: nowIso() } : a); return d; }),
     renameCategory: (id, name) => mutate((d) => { d.categories = { updatedAt: nowIso(), items: d.categories.items.map((c) => c.id === id ? { ...c, name } : c) }; return d; }),
+    removeCategory: (id) => mutate((d) => {
+      d.categories = { updatedAt: nowIso(), items: d.categories.items.filter((c) => c.id !== id) };
+      d.checks = d.checks.map((c) => {
+        if (!c.allocations || !(id in c.allocations)) return c;
+        const next = { ...c.allocations };
+        delete next[id];
+        return { ...c, allocations: next, updatedAt: nowIso() };
+      });
+      return d;
+    }),
     setAllocation: (checkId, catId, value) => mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, allocations: { ...c.allocations, [catId]: value }, updatedAt: nowIso() } : c); return d; }),
     updateCheck: (checkId, patch) => mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, ...patch, updatedAt: nowIso() } : c); return d; }),
     addCheck: () => mutate((d) => {
       const live = d.checks.filter((c) => !c.deleted).sort((a, b) => a.payDate < b.payDate ? -1 : 1);
-      const lastDate = live.length ? live[live.length - 1].payDate : new Date().toISOString().slice(0, 10);
+      const last = live.length ? live[live.length - 1] : null;
+      const lastDate = last ? last.payDate : new Date().toISOString().slice(0, 10);
+      const inherit = !!(last && last.repeat === true);
       const alloc = Object.fromEntries(d.categories.items.map((c) => [c.id, 0]));
-      d.checks.push({ id: uid("chk"), label: "Check", payDate: addDays(lastDate, BIWEEKLY_DAYS), income: 0, allocations: alloc, customCategories: [], updatedAt: nowIso(), deleted: false });
+      d.checks.push({
+        id: uid("chk"), label: "Check",
+        payDate: addDays(lastDate, BIWEEKLY_DAYS),
+        income: inherit ? num(last.income) : 0,
+        allocations: alloc, customCategories: [], repeat: inherit,
+        updatedAt: nowIso(), deleted: false,
+      });
       return d;
     }),
     removeCheck: (checkId) => {
@@ -655,6 +739,7 @@ function App() {
           OuroBudget™ · No ads, no tracking, your data never leaves your device · Loop In. Level Up.
         </p>
       </main>
+      <UpdateBanner />
     </div>
   );
 }

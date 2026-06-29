@@ -3,12 +3,13 @@
    offline after the first visit. There is no backend: all data lives in the
    browser (IndexedDB). Relative URLs so it works whether hosted at a domain
    root or a sub-path. */
-const CACHE = "ouro-pwa-v2";
+const CACHE = "ouro-pwa-v3";
 
 const SHELL = [
   "./",
   "./index.html",
   "./app.jsx",
+  "./lib.js",
   "./manifest.webmanifest",
   "./assets/vendor/react.production.min.js",
   "./assets/vendor/react-dom.production.min.js",
@@ -27,8 +28,12 @@ self.addEventListener("install", (event) => {
     caches.open(CACHE)
       // ignore any single asset that 404s so install never fully fails
       .then((c) => Promise.allSettled(SHELL.map((u) => c.add(u))))
-      .then(() => self.skipWaiting())
   );
+});
+
+// Activate immediately only when the page asks (user clicked "Refresh").
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("activate", (event) => {
