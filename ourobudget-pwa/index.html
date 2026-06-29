@@ -20,12 +20,12 @@
     :root {
       --bg:#EDECE9; --surface:#F7F7F5; --accent:#5A9B0A; --accent-d:#3D6B07;
       --accent-l:#EAF3D8; --accent-m:#A8C870; --border:#DCE5CB;
-      --text:#262525; --text2:#6E6B6B; --muted:#848282;
+      --text:#262525; --text2:#6E6B6B; --muted:#848282; --danger:#C0392B;
     }
     .dark {
       --bg:#1E1E1E; --surface:#262525; --accent:#6FDC30; --accent-d:#2ABF33;
       --accent-l:rgba(90,155,10,0.12); --accent-m:rgba(90,155,10,0.30); --border:#343d2a;
-      --text:#EDECE9; --text2:#848282; --muted:#6E6B6B;
+      --text:#EDECE9; --text2:#848282; --muted:#6E6B6B; --danger:#FF6B6B;
     }
     html, body { background:var(--bg); }
     body {
@@ -46,7 +46,8 @@
         colors: { brand: {
           bg:'var(--bg)', surface:'var(--surface)', accent:'var(--accent)',
           accentd:'var(--accent-d)', accentl:'var(--accent-l)', accentm:'var(--accent-m)',
-          border:'var(--border)', text:'var(--text)', text2:'var(--text2)', muted:'var(--muted)'
+          border:'var(--border)', text:'var(--text)', text2:'var(--text2)', muted:'var(--muted)',
+          danger:'var(--danger)'
         } },
         fontFamily: { sans:['-apple-system','BlinkMacSystemFont','Segoe UI','system-ui','sans-serif'] }
       } }

@@ -163,7 +163,9 @@ const GhostBtn = ({ children, onClick, className = "" }) => (
    Dashboard
    ========================================================================= */
 function StatCard({ label, value, sub, tone }) {
-  const toneClass = tone === "good" ? "text-brand-accent" : tone === "warn" ? "text-brand-text2" : "text-brand-text";
+  const toneClass = tone === "good" ? "text-brand-accent"
+    : tone === "bad" ? "text-brand-danger"
+    : tone === "warn" ? "text-brand-text2" : "text-brand-text";
   return (
     <Card className="p-4">
       <Eyebrow>{label}</Eyebrow>
@@ -175,6 +177,8 @@ function StatCard({ label, value, sub, tone }) {
 
 function BreakdownBar({ doc, check }) {
   const b = computeBreakdown(check, doc.categories.items);
+  const over = b.over > 0;
+  const segColor = (i) => over ? "var(--danger)" : SEG_COLORS[i % SEG_COLORS.length];
   return (
     <Card className="p-4">
       <Eyebrow>Where your money is going:</Eyebrow>
@@ -187,7 +191,7 @@ function BreakdownBar({ doc, check }) {
           <div className="flex w-full h-3 rounded-full overflow-hidden my-3 bg-brand-bg">
             {b.segments.map((s, i) => (
               <div key={i} title={`${s.name}: ${money(s.amt)}`}
-                style={{ width: `${s.width}%`, background: SEG_COLORS[i % SEG_COLORS.length] }} />
+                style={{ width: `${s.width}%`, background: segColor(i) }} />
             ))}
             {b.unallocated && (
               <div title={`Unallocated: ${money(b.unallocated.amt)}`}
@@ -197,7 +201,7 @@ function BreakdownBar({ doc, check }) {
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-4 gap-y-1 mt-2">
             {b.segments.map((s, i) => (
               <div key={i} className="flex items-center gap-2 text-xs">
-                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: SEG_COLORS[i % SEG_COLORS.length] }} />
+                <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: segColor(i) }} />
                 <span className="text-brand-text2 truncate">{s.name}</span>
                 <span className="ml-auto tabular-nums text-brand-muted">{s.pct}%</span>
               </div>
@@ -211,7 +215,7 @@ function BreakdownBar({ doc, check }) {
             )}
           </div>
           {b.over > 0 && (
-            <div className="text-xs text-brand-text2 mt-2">Over income by {money(b.over)}</div>
+            <div className="text-xs text-brand-danger font-medium mt-2">Over income by {money(b.over)}</div>
           )}
           {b.incomeZeroFallback && (
             <div className="text-xs text-brand-muted mt-2">
@@ -241,7 +245,7 @@ function Dashboard({ doc, check }) {
         <StatCard label="This Check — Left to Allocate"
           value={left >= 0 ? money(left) : money(Math.abs(left))}
           sub={left >= 0 ? "left to allocate" : "over income"}
-          tone={left >= 0 ? "good" : "warn"} />
+          tone={left >= 0 ? "good" : "bad"} />
       </div>
       {accounts.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -367,7 +371,7 @@ function BudgetSection({ doc, check, selectedId, setSelectedId, actions }) {
       <div className="flex flex-wrap items-center gap-x-6 gap-y-1 mt-4 pt-3 border-t border-brand-border text-sm">
         <span className="text-brand-text2">Budgeted <span className="tabular-nums text-brand-text font-medium">{money(budgeted)}</span></span>
         <span className="text-brand-text2">Income <span className="tabular-nums text-brand-text font-medium">{money(income)}</span></span>
-        <span className={left >= 0 ? "text-brand-accent" : "text-brand-text2"}>
+        <span className={left >= 0 ? "text-brand-accent" : "text-brand-danger font-medium"}>
           {left >= 0 ? "Left " : "Over "}
           <span className="tabular-nums font-medium">{money(Math.abs(left))}</span>
         </span>
@@ -569,13 +573,7 @@ function Header({ dark, setDark, saving }) {
     <header className="sticky top-0 z-10 bg-brand-bg border-b border-brand-border">
       <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
         <div className="flex items-center gap-2.5 min-w-0">
-          <img src={dark ? "assets/logo-dark.svg" : "assets/logo-light.svg"} alt="OuroBudget" className="h-9 w-auto" />
-          <div className="min-w-0">
-            <div className="text-sm font-medium leading-none text-brand-text">
-              OuroBudget<sup className="text-[0.55em] align-super">™</sup>
-            </div>
-            <div className="eyebrow text-brand-muted mt-0.5">Manual Budget</div>
-          </div>
+          <img src="assets/icon.svg" alt="OuroBudget" className="h-9 w-auto" />
         </div>
         <div className="flex items-center gap-2">
           <span className="hidden sm:flex items-center gap-1.5 text-xs text-brand-text2" title="Saved on this device">
