@@ -25,6 +25,27 @@ const prettyDate = (iso) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
+const FREQ_PRESETS = [
+  { key: "daily", label: "Daily", unit: "day", interval: 1 },
+  { key: "weekly", label: "Weekly", unit: "week", interval: 1 },
+  { key: "biweekly", label: "Biweekly", unit: "week", interval: 2 },
+  { key: "monthly", label: "Monthly", unit: "month", interval: 1 },
+  { key: "quarterly", label: "Quarterly", unit: "month", interval: 3 },
+  { key: "semiannual", label: "Semi-annual", unit: "month", interval: 6 },
+  { key: "annual", label: "Annual", unit: "year", interval: 1 },
+];
+const matchPreset = (freq) => FREQ_PRESETS.find((p) => p.unit === freq.unit && p.interval === freq.interval);
+const describeRecurrence = (rule) => {
+  if (!rule || !rule.freq) return "";
+  const p = matchPreset(rule.freq);
+  const cadence = p ? p.label.toLowerCase()
+    : `every ${rule.freq.interval} ${rule.freq.unit}${rule.freq.interval === 1 ? "" : "s"}`;
+  let s = `${money(num(rule.amount))} ${cadence}`;
+  if (rule.firstDue) s += `, starting ${prettyDate(rule.firstDue)}`;
+  if (rule.endDate) s += ` until ${prettyDate(rule.endDate)}`;
+  return s;
+};
+
 const FIXED_CATEGORIES = [
   { id: "cat_car", name: "Car" },
   { id: "cat_gas", name: "Gas" },
@@ -46,13 +67,14 @@ function buildSeed() {
     budgetTitle: "",
     categories: { updatedAt: ts, items: FIXED_CATEGORIES.map((c) => ({ ...c })) },
     accounts: DEFAULT_ACCOUNTS.map((a) => ({ ...a, balance: 0, updatedAt: ts, deleted: false })),
+    recurring: [],
     checks: [0, 1, 2, 3].map((i) => ({
       id: `chk_${i + 1}`,
       label: `Check ${i + 1}`,
       payDate: addDays(start, BIWEEKLY_DAYS * i),
       income: 0,
       allocations: alloc(),
-      customCategories: [],
+      recurringOverrides: {},
       repeat: false,
       updatedAt: ts,
       deleted: false,
@@ -99,10 +121,10 @@ async function idbSet(doc) {
 const visible = (list) => (list || []).filter((x) => !x.deleted);
 const sortedChecks = (doc) =>
   visible(doc.checks).sort((a, b) => (a.payDate < b.payDate ? -1 : a.payDate > b.payDate ? 1 : 0));
-const checkBudgeted = (chk) => {
-  const fixed = Object.values(chk.allocations || {}).reduce((s, v) => s + num(v), 0);
-  const custom = (chk.customCategories || []).reduce((s, c) => s + num(c.amount), 0);
-  return fixed + custom;
+const checkWindowEnd = (checks, check) => {
+  const idx = checks.findIndex((c) => c.id === check.id);
+  const next = checks[idx + 1];
+  return next ? next.payDate : addDays(check.payDate, BIWEEKLY_DAYS);
 };
 const SEG_COLORS = ["#5A9B0A", "#A8C870", "#3D6B07", "#6FDC30", "#83b34a", "#cfe3a8", "#2ABF33", "#b9cf91", "#4e7d10", "#9bbf63"];
 
@@ -175,8 +197,8 @@ function StatCard({ label, value, sub, tone }) {
   );
 }
 
-function BreakdownBar({ doc, check }) {
-  const b = computeBreakdown(check, doc.categories.items);
+function BreakdownBar({ doc, check, windowEnd }) {
+  const b = computeBreakdown(check, doc.categories.items, doc.recurring, windowEnd);
   const over = b.over > 0;
   const segColor = (i) => over ? "var(--danger)" : SEG_COLORS[i % SEG_COLORS.length];
   return (
@@ -232,7 +254,8 @@ function Dashboard({ doc, check }) {
   const accounts = visible(doc.accounts);
   const totalCash = accounts.reduce((s, a) => s + num(a.balance), 0);
   const income = num(check ? check.income : 0);
-  const budgeted = check ? checkBudgeted(check) : 0;
+  const dashChecks = sortedChecks(doc);
+  const budgeted = check ? checkBudgeted(check, doc.recurring, checkWindowEnd(dashChecks, check)) : 0;
   const left = income - budgeted;
   return (
     <div className="space-y-3">
@@ -257,7 +280,7 @@ function Dashboard({ doc, check }) {
           ))}
         </div>
       )}
-      {check && <BreakdownBar doc={doc} check={check} />}
+      {check && <BreakdownBar doc={doc} check={check} windowEnd={checkWindowEnd(dashChecks, check)} />}
     </div>
   );
 }
@@ -265,7 +288,82 @@ function Dashboard({ doc, check }) {
 /* =========================================================================
    Budget section
    ========================================================================= */
-function BudgetRow({ label, renamable, onRename, amount, onAmount, onRemove }) {
+function RecurrenceEditor({ categoryName, rule, defaultFirstDue, onSave, onRemove, onClose }) {
+  const initPreset = rule ? matchPreset(rule.freq) : FREQ_PRESETS[3]; // default Monthly
+  const [presetKey, setPresetKey] = useState(initPreset ? initPreset.key : "custom");
+  const [customUnit, setCustomUnit] = useState(rule ? rule.freq.unit : "month");
+  const [customInterval, setCustomInterval] = useState(rule ? rule.freq.interval : 1);
+  const [amount, setAmount] = useState(rule ? rule.amount : 0);
+  const [firstDue, setFirstDue] = useState(rule ? rule.firstDue : defaultFirstDue);
+  const [endDate, setEndDate] = useState(rule ? (rule.endDate || "") : "");
+
+  const freq = presetKey === "custom"
+    ? { unit: customUnit, interval: Math.max(1, num(customInterval) || 1) }
+    : (() => { const p = FREQ_PRESETS.find((x) => x.key === presetKey); return { unit: p.unit, interval: p.interval }; })();
+  const preview = describeRecurrence({ amount, freq, firstDue, endDate: endDate || null });
+
+  return (
+    <div className="mt-2 mb-1 bg-brand-bg border border-brand-border rounded-xl p-3 space-y-2">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium text-brand-text">Recurring: {categoryName}</span>
+        <button onClick={onClose} className="text-brand-muted text-lg leading-none px-1" title="Close">×</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <select value={presetKey} onChange={(e) => setPresetKey(e.target.value)}
+          className="bg-brand-surface border border-brand-border rounded-lg px-2 py-1 text-brand-text">
+          {FREQ_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+          <option value="custom">Custom…</option>
+        </select>
+        {presetKey === "custom" && (
+          <span className="flex items-center gap-1">
+            <span className="text-brand-text2">every</span>
+            <input type="number" min="1" value={customInterval}
+              onChange={(e) => setCustomInterval(e.target.value)}
+              className="w-14 bg-brand-surface border border-brand-border rounded-lg px-2 py-1 text-brand-text" />
+            <select value={customUnit} onChange={(e) => setCustomUnit(e.target.value)}
+              className="bg-brand-surface border border-brand-border rounded-lg px-2 py-1 text-brand-text">
+              <option value="day">days</option><option value="week">weeks</option>
+              <option value="month">months</option><option value="year">years</option>
+            </select>
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-3 text-sm">
+        <label className="flex items-center gap-1">
+          <span className="text-brand-text2">$</span>
+          <MoneyInput value={amount} onChange={setAmount}
+            className="w-24 text-brand-text border-b border-brand-border focus:border-brand-accent" />
+        </label>
+        <label className="flex items-center gap-1">
+          <span className="text-brand-text2">from</span>
+          <input type="date" value={firstDue} onChange={(e) => setFirstDue(e.target.value)}
+            className="bg-brand-surface border border-brand-border rounded-lg px-2 py-1 text-brand-text" />
+        </label>
+        <label className="flex items-center gap-1">
+          <span className="text-brand-text2">until</span>
+          <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)}
+            className="bg-brand-surface border border-brand-border rounded-lg px-2 py-1 text-brand-text" />
+        </label>
+      </div>
+      <div className="text-xs text-brand-muted">{preview}</div>
+      <div className="flex items-center gap-2">
+        <button onClick={() => onSave({ amount: num(amount), freq, firstDue, endDate: endDate || null })}
+          className="rounded-full px-3 py-1 text-xs font-medium bg-brand-accent text-white dark:text-[#15240a] hover:bg-brand-accentd">
+          Save
+        </button>
+        {rule && (
+          <button onClick={onRemove}
+            className="rounded-full px-3 py-1 text-xs border border-brand-border text-brand-danger hover:border-brand-danger">
+            Remove recurrence
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BudgetRow({ label, renamable, onRename, amount, onAmount, onRemoveHere, onRemoveEverywhere, rule, overridden, onOpenRecurrence, onRevert }) {
+  const [confirming, setConfirming] = useState(false);
   return (
     <div className="flex items-center gap-3 py-2 border-b border-brand-border last:border-0">
       {renamable ? (
@@ -273,12 +371,31 @@ function BudgetRow({ label, renamable, onRename, amount, onAmount, onRemove }) {
       ) : (
         <span className="flex-1 text-sm text-brand-text truncate">{label}</span>
       )}
+      {onOpenRecurrence && (
+        <button onClick={onOpenRecurrence} title={rule ? "Edit recurrence" : "Make recurring"}
+          className={"text-sm leading-none px-1 " + (rule ? "text-brand-accent" : "text-brand-muted hover:text-brand-accentd")}>↻</button>
+      )}
+      {rule && overridden && (
+        <button onClick={onRevert} title="Revert to recurring amount"
+          className="text-brand-muted hover:text-brand-accentd text-sm leading-none px-1">↺</button>
+      )}
       <span className="text-brand-muted text-sm">$</span>
       <MoneyInput value={amount} onChange={onAmount}
         className="w-24 text-sm text-brand-text border-b border-brand-border focus:border-brand-accent" />
-      {onRemove && (
-        <button onClick={onRemove}
-          className="text-brand-muted hover:text-brand-accentd text-lg leading-none px-1" title="Remove">×</button>
+      {(onRemoveHere || onRemoveEverywhere) && (
+        confirming ? (
+          <span className="flex items-center gap-1 text-xs">
+            <button onClick={() => { onRemoveHere(); setConfirming(false); }}
+              className="rounded-full px-2 py-0.5 border border-brand-border text-brand-text2 hover:border-brand-accent">This check</button>
+            <button onClick={() => { onRemoveEverywhere(); setConfirming(false); }}
+              className="rounded-full px-2 py-0.5 border border-brand-border text-brand-danger hover:border-brand-danger">Everywhere</button>
+            <button onClick={() => setConfirming(false)} title="Cancel"
+              className="text-brand-muted hover:text-brand-text text-sm leading-none px-1">×</button>
+          </span>
+        ) : (
+          <button onClick={() => setConfirming(true)}
+            className="text-brand-muted hover:text-brand-accentd text-lg leading-none px-1" title="Remove">×</button>
+        )
       )}
     </div>
   );
@@ -286,10 +403,12 @@ function BudgetRow({ label, renamable, onRename, amount, onAmount, onRemove }) {
 
 function BudgetSection({ doc, check, selectedId, setSelectedId, actions }) {
   const [newCat, setNewCat] = useState("");
+  const [editingCat, setEditingCat] = useState(null); // categoryId whose recurrence editor is open
   const checks = sortedChecks(doc);
   if (!check) return null;
+  const windowEnd = checkWindowEnd(checks, check);
   const income = num(check.income);
-  const budgeted = checkBudgeted(check);
+  const budgeted = checkBudgeted(check, doc.recurring, windowEnd);
   const left = income - budgeted;
   return (
     <Card className="p-4 sm:p-5">
@@ -344,26 +463,36 @@ function BudgetSection({ doc, check, selectedId, setSelectedId, actions }) {
       </label>
 
       <div className="mt-3">
-        {doc.categories.items.map((c) => (
-          <BudgetRow key={c.id} label={c.name} renamable
-            onRename={(name) => actions.renameCategory(c.id, name)}
-            amount={(check.allocations || {})[c.id]}
-            onAmount={(v) => actions.setAllocation(check.id, c.id, v)}
-            onRemove={() => actions.removeCategory(c.id)} />
-        ))}
-        {(check.customCategories || []).map((c) => (
-          <BudgetRow key={c.id} label={c.name} renamable
-            onRename={(name) => actions.updateCustom(check.id, c.id, { name })}
-            amount={c.amount}
-            onAmount={(v) => actions.updateCustom(check.id, c.id, { amount: v })}
-            onRemove={() => actions.removeCustom(check.id, c.id)} />
-        ))}
+        {doc.categories.items.filter((c) => c.id in (check.allocations || {})).map((c) => {
+          const rule = recurringRuleFor(doc.recurring, c.id);
+          const overridden = !!(rule && check.recurringOverrides && (c.id in check.recurringOverrides));
+          const amt = effectiveAllocation(check, c.id, doc.recurring, windowEnd);
+          return (
+            <React.Fragment key={c.id}>
+              <BudgetRow label={c.name} renamable
+                onRename={(name) => actions.renameCategory(c.id, name)}
+                amount={amt}
+                onAmount={(v) => rule ? actions.setOverride(check.id, c.id, v) : actions.setAllocation(check.id, c.id, v)}
+                onRemoveHere={() => actions.removeCategoryHere(check.id, c.id)}
+                onRemoveEverywhere={() => actions.removeCategoryEverywhere(c.id)}
+                rule={rule} overridden={overridden}
+                onOpenRecurrence={() => setEditingCat(editingCat === c.id ? null : c.id)}
+                onRevert={() => actions.revertOverride(check.id, c.id)} />
+              {editingCat === c.id && (
+                <RecurrenceEditor categoryName={c.name} rule={rule} defaultFirstDue={check.payDate}
+                  onSave={(fields) => { actions.setRecurring(c.id, fields); setEditingCat(null); }}
+                  onRemove={() => { actions.removeRecurring(c.id); setEditingCat(null); }}
+                  onClose={() => setEditingCat(null)} />
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
 
       <div className="flex items-center gap-2 mt-3">
         <TextInput value={newCat} onChange={setNewCat} placeholder="Other"
           className="flex-1 text-sm bg-brand-bg rounded-full px-3 py-2 border border-brand-border focus:border-brand-accent" />
-        <GhostBtn onClick={() => { actions.addCustom(check.id, newCat.trim() || "Other"); setNewCat(""); }}>
+        <GhostBtn onClick={() => { actions.addCategory(newCat.trim() || "Other"); setNewCat(""); }}>
           + Add category
         </GhostBtn>
       </div>
@@ -668,17 +797,85 @@ function App() {
     addAccount: () => mutate((d) => { d.accounts.push({ id: uid("acc"), name: "New Account", balance: 0, updatedAt: nowIso(), deleted: false }); return d; }),
     removeAccount: (id) => mutate((d) => { d.accounts = d.accounts.map((a) => a.id === id ? { ...a, deleted: true, updatedAt: nowIso() } : a); return d; }),
     renameCategory: (id, name) => mutate((d) => { d.categories = { updatedAt: nowIso(), items: d.categories.items.map((c) => c.id === id ? { ...c, name } : c) }; return d; }),
-    removeCategory: (id) => mutate((d) => {
+    removeCategoryEverywhere: (id) => mutate((d) => {
       d.categories = { updatedAt: nowIso(), items: d.categories.items.filter((c) => c.id !== id) };
+      d.recurring = (d.recurring || []).filter((r) => r.categoryId !== id);
       d.checks = d.checks.map((c) => {
-        if (!c.allocations || !(id in c.allocations)) return c;
-        const next = { ...c.allocations };
-        delete next[id];
-        return { ...c, allocations: next, updatedAt: nowIso() };
+        let next = c;
+        if (c.allocations && id in c.allocations) {
+          const a = { ...c.allocations }; delete a[id];
+          next = { ...next, allocations: a, updatedAt: nowIso() };
+        }
+        if (c.recurringOverrides && id in c.recurringOverrides) {
+          const o = { ...next.recurringOverrides }; delete o[id];
+          next = { ...next, recurringOverrides: o, updatedAt: nowIso() };
+        }
+        return next;
+      });
+      return d;
+    }),
+    addCategory: (name) => mutate((d) => {
+      const id = uid("cat");
+      d.categories = { updatedAt: nowIso(), items: [...d.categories.items, { id, name }] };
+      d.checks = d.checks.map((c) => ({ ...c, allocations: { ...c.allocations, [id]: 0 }, updatedAt: nowIso() }));
+      return d;
+    }),
+    removeCategoryHere: (checkId, catId) => mutate((d) => {
+      d.checks = d.checks.map((c) => {
+        if (c.id !== checkId) return c;
+        let next = c;
+        if (c.allocations && catId in c.allocations) {
+          const a = { ...c.allocations }; delete a[catId];
+          next = { ...next, allocations: a };
+        }
+        if (c.recurringOverrides && catId in c.recurringOverrides) {
+          const o = { ...next.recurringOverrides }; delete o[catId];
+          next = { ...next, recurringOverrides: o };
+        }
+        return { ...next, updatedAt: nowIso() };
       });
       return d;
     }),
     setAllocation: (checkId, catId, value) => mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, allocations: { ...c.allocations, [catId]: value }, updatedAt: nowIso() } : c); return d; }),
+    setRecurring: (categoryId, fields) => mutate((d) => {
+      const list = d.recurring || [];
+      const existing = list.find((r) => r.categoryId === categoryId);
+      if (existing) {
+        d.recurring = list.map((r) => r.categoryId === categoryId
+          ? { ...r, ...fields, updatedAt: nowIso() } : r);
+      } else {
+        d.recurring = [...list, {
+          id: uid("rec"), categoryId,
+          amount: num(fields.amount),
+          freq: fields.freq, firstDue: fields.firstDue, endDate: fields.endDate || null,
+          createdAt: nowIso(), updatedAt: nowIso(),
+        }];
+      }
+      return d;
+    }),
+    removeRecurring: (categoryId) => mutate((d) => {
+      d.recurring = (d.recurring || []).filter((r) => r.categoryId !== categoryId);
+      d.checks = d.checks.map((c) => {
+        if (!c.recurringOverrides || !(categoryId in c.recurringOverrides)) return c;
+        const o = { ...c.recurringOverrides }; delete o[categoryId];
+        return { ...c, recurringOverrides: o, updatedAt: nowIso() };
+      });
+      return d;
+    }),
+    setOverride: (checkId, categoryId, value) => mutate((d) => {
+      d.checks = d.checks.map((c) => c.id === checkId
+        ? { ...c, recurringOverrides: { ...(c.recurringOverrides || {}), [categoryId]: num(value) }, updatedAt: nowIso() }
+        : c);
+      return d;
+    }),
+    revertOverride: (checkId, categoryId) => mutate((d) => {
+      d.checks = d.checks.map((c) => {
+        if (c.id !== checkId || !c.recurringOverrides || !(categoryId in c.recurringOverrides)) return c;
+        const o = { ...c.recurringOverrides }; delete o[categoryId];
+        return { ...c, recurringOverrides: o, updatedAt: nowIso() };
+      });
+      return d;
+    }),
     updateCheck: (checkId, patch) => mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, ...patch, updatedAt: nowIso() } : c); return d; }),
     addCheck: () => mutate((d) => {
       const live = d.checks.filter((c) => !c.deleted).sort((a, b) => a.payDate < b.payDate ? -1 : 1);
@@ -690,7 +887,7 @@ function App() {
         id: uid("chk"), label: "Check",
         payDate: addDays(lastDate, BIWEEKLY_DAYS),
         income: inherit ? num(last.income) : 0,
-        allocations: alloc, customCategories: [], repeat: inherit,
+        allocations: alloc, recurringOverrides: {}, repeat: inherit,
         updatedAt: nowIso(), deleted: false,
       });
       return d;
@@ -701,9 +898,6 @@ function App() {
       mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, deleted: true, updatedAt: nowIso() } : c); return d; });
       if (selectedId === checkId) { const next = live.find((c) => c.id !== checkId); setSelectedId(next ? next.id : null); }
     },
-    addCustom: (checkId, name) => mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, customCategories: [...(c.customCategories || []), { id: uid("cust"), name, amount: 0 }], updatedAt: nowIso() } : c); return d; }),
-    updateCustom: (checkId, custId, patch) => mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, customCategories: c.customCategories.map((x) => x.id === custId ? { ...x, ...patch } : x), updatedAt: nowIso() } : c); return d; }),
-    removeCustom: (checkId, custId) => mutate((d) => { d.checks = d.checks.map((c) => c.id === checkId ? { ...c, customCategories: c.customCategories.filter((x) => x.id !== custId), updatedAt: nowIso() } : c); return d; }),
   };
 
   if (!doc) return <div className="min-h-screen flex items-center justify-center text-brand-muted">Loading…</div>;

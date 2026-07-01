@@ -3,7 +3,7 @@
    offline after the first visit. There is no backend: all data lives in the
    browser (IndexedDB). Relative URLs so it works whether hosted at a domain
    root or a sub-path. */
-const CACHE = "ouro-pwa-v4";
+const CACHE = "ouro-pwa-v6";
 
 const SHELL = [
   "./",
